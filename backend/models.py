@@ -8,7 +8,7 @@ import boto3
 from pydantic_ai.models import Model
 from pydantic_ai.models.bedrock import BedrockConverseModel, BedrockModelSettings
 from pydantic_ai.models.google import GoogleModel, GoogleModelSettings
-from pydantic_ai.models.openai import OpenAIModel, OpenAIModelSettings
+from pydantic_ai.models.openai import OpenAIChatModel, OpenAIChatModelSettings
 from pydantic_ai.providers.bedrock import BedrockProvider
 from pydantic_ai.providers.google import GoogleProvider
 from pydantic_ai.providers.openai import OpenAIProvider
@@ -69,7 +69,7 @@ def resolve_model(spec: str, settings: Settings) -> Model:
                     provider=BedrockProvider(bedrock_client=client),
                 )
         case "azure":
-            return OpenAIModel(
+            return OpenAIChatModel(
                 model_id,
                 provider=OpenAIProvider(
                     base_url=settings.azure_openai_endpoint,
@@ -77,11 +77,21 @@ def resolve_model(spec: str, settings: Settings) -> Model:
                 ),
             )
         case "zen":
-            return OpenAIModel(
+            return OpenAIChatModel(
                 model_id,
                 provider=OpenAIProvider(
                     base_url="https://opencode.ai/zen/v1",
                     api_key=settings.opencode_zen_api_key,
+                ),
+            )
+        case "featherless":
+            if not settings.featherless_api_key:
+                raise ValueError("FEATHERLESS_API_KEY is required for featherless/* models")
+            return OpenAIChatModel(
+                model_id,
+                provider=OpenAIProvider(
+                    base_url="https://api.featherless.ai/v1",
+                    api_key=settings.featherless_api_key,
                 ),
             )
         case "google":
@@ -109,11 +119,10 @@ def resolve_model_settings(spec: str) -> ModelSettings:
                 bedrock_cache_tool_definitions=True,
                 bedrock_cache_messages=True,
             )
-        case "azure" | "zen":
-            # Azure/Zen use OpenAI chat completions — server-side prompt caching
-            # is automatic, no explicit config needed. Set max_tokens to avoid
-            # reserving the full context window.
-            return OpenAIModelSettings(
+        case "azure" | "zen" | "featherless":
+            # These OpenAI-compatible APIs need no explicit cache settings. Set
+            # max_tokens to avoid reserving the model's full context window.
+            return OpenAIChatModelSettings(
                 max_tokens=128_000,
             )
         case "google":
@@ -131,6 +140,9 @@ def resolve_model_settings(spec: str) -> ModelSettings:
 def model_id_from_spec(spec: str) -> str:
     """Extract just the model ID from a spec (strips effort suffix)."""
     parts = spec.split("/")
+    # Featherless model IDs are Hugging Face repository IDs and contain a slash.
+    if len(parts) >= 3 and parts[0] == "featherless":
+        return "/".join(parts[1:])
     return parts[1] if len(parts) >= 2 else spec
 
 

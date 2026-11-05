@@ -16,6 +16,13 @@ from backend.models import DEFAULT_MODELS
 console = Console()
 
 
+def _default_models_for_settings(settings: Settings) -> list[str]:
+    """Prefer the configured API provider when no solver lineup is supplied."""
+    if settings.featherless_api_key:
+        return ["featherless/Qwen/Qwen3-Coder-30B-A3B-Instruct"]
+    return list(DEFAULT_MODELS)
+
+
 def _setup_logging(verbose: bool = False) -> None:
     level = logging.DEBUG if verbose else logging.INFO
     logging.getLogger("httpx").setLevel(logging.WARNING)
@@ -36,8 +43,8 @@ def _setup_logging(verbose: bool = False) -> None:
 @click.option("--challenge", default=None, help="Solve a single challenge directory")
 @click.option("--challenges-dir", default="challenges", help="Directory for challenge files")
 @click.option("--no-submit", is_flag=True, help="Dry run — don't submit flags")
-@click.option("--coordinator-model", default=None, help="Model for coordinator (default: claude-opus-4-6)")
-@click.option("--coordinator", default="claude", type=click.Choice(["claude", "codex"]), help="Coordinator backend")
+@click.option("--coordinator-model", default=None, help="Coordinator model (defaults to backend-specific model)")
+@click.option("--coordinator", default=None, type=click.Choice(["claude", "codex", "featherless"]), help="Coordinator backend (defaults to Featherless when its key is set)")
 @click.option("--max-challenges", default=10, type=int, help="Max challenges solved concurrently")
 @click.option("--msg-port", default=0, type=int, help="Operator message port (0 = auto)")
 @click.option("-v", "--verbose", is_flag=True, help="Verbose logging")
@@ -50,7 +57,7 @@ def main(
     challenges_dir: str,
     no_submit: bool,
     coordinator_model: str | None,
-    coordinator: str,
+    coordinator: str | None,
     max_challenges: int,
     msg_port: int,
     verbose: bool,
@@ -68,19 +75,22 @@ def main(
         settings.ctfd_token = ctfd_token
     settings.max_concurrent_challenges = max_challenges
 
-    model_specs = list(models) if models else list(DEFAULT_MODELS)
+    model_specs = list(models) if models else _default_models_for_settings(settings)
+    coordinator_backend = coordinator or ("featherless" if settings.featherless_api_key else "claude")
 
     console.print("[bold]CTF Agent v2[/bold]")
     console.print(f"  CTFd: {settings.ctfd_url}")
     console.print(f"  Models: {', '.join(model_specs)}")
     console.print(f"  Image: {settings.sandbox_image}")
     console.print(f"  Max challenges: {max_challenges}")
+    if not challenge:
+        console.print(f"  Coordinator: {coordinator_backend}")
     console.print()
 
     if challenge:
         asyncio.run(_run_single(settings, challenge, model_specs, no_submit, max_challenges))
     else:
-        asyncio.run(_run_coordinator(settings, model_specs, challenges_dir, no_submit, coordinator_model, coordinator, max_challenges, msg_port))
+        asyncio.run(_run_coordinator(settings, model_specs, challenges_dir, no_submit, coordinator_model, coordinator_backend, max_challenges, msg_port))
 
 
 async def _run_single(
@@ -165,6 +175,16 @@ async def _run_coordinator(
     if coordinator_backend == "codex":
         from backend.agents.codex_coordinator import run_codex_coordinator
         results = await run_codex_coordinator(
+            settings=settings,
+            model_specs=model_specs,
+            challenges_root=challenges_dir,
+            no_submit=no_submit,
+            coordinator_model=coordinator_model,
+            msg_port=msg_port,
+        )
+    elif coordinator_backend == "featherless":
+        from backend.agents.featherless_coordinator import run_featherless_coordinator
+        results = await run_featherless_coordinator(
             settings=settings,
             model_specs=model_specs,
             challenges_root=challenges_dir,

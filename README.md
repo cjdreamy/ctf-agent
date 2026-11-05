@@ -69,7 +69,7 @@ cp .env.example .env
 
 # Run against a CTFd instance
 uv run ctf-solve \
-  --ctfd-url https://ctf.example.com \
+  --ctfd-url https://ctf.imbank.com \
   --ctfd-token ctfd_your_token \
   --challenges-dir challenges \
   --max-challenges 10 \
@@ -84,6 +84,9 @@ uv run ctf-solve --coordinator claude ...
 
 # Codex coordinator (GPT-5.4 via JSON-RPC)
 uv run ctf-solve --coordinator codex ...
+
+# Featherless coordinator (selected automatically when FEATHERLESS_API_KEY is set)
+uv run ctf-solve --coordinator featherless ...
 ```
 
 ## Solver Models

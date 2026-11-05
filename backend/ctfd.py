@@ -177,7 +177,20 @@ class CTFdClient:
             # Use team solves if on a team, otherwise user solves
             team_id = user_data.get("team_id")
             if team_id:
-                solves = await self._get(f"/teams/{team_id}/solves")
+                try:
+                    solves = await self._get(f"/teams/{team_id}/solves")
+                except httpx.HTTPStatusError as e:
+                    if e.response.status_code != 404:
+                        raise
+                    # Some CTFd deployments hide or omit the team-solves route.
+                    # Fall back to this user's solves so polling can still track
+                    # at least the solves made by the authenticated account.
+                    user_id = user_data.get("id")
+                    if not user_id:
+                        logger.warning("CTFd team-solves endpoint returned 404; user ID unavailable for fallback")
+                        return set()
+                    logger.warning("CTFd team-solves endpoint returned 404; falling back to user solves")
+                    solves = await self._get(f"/users/{user_id}/solves")
             else:
                 user_id = user_data.get("id")
                 if not user_id:
@@ -188,8 +201,8 @@ class CTFdClient:
                 for s in solves.get("data", [])
                 if s.get("challenge", {}).get("name")
             }
-        except Exception:
-            logger.warning("Could not fetch solved challenges", exc_info=True)
+        except Exception as e:
+            logger.warning("Could not fetch solved challenges: %s", e)
             return set()
 
     async def pull_challenge(self, challenge: dict[str, Any], output_dir: str) -> str:

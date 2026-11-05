@@ -285,6 +285,7 @@ class ClaudeSolver:
         t0 = time.monotonic()
         cost_before = self._cost_usd
         steps_before = self._step_count
+        turn_error = False
 
         try:
             if self._bump_insights:
@@ -312,6 +313,17 @@ class ClaudeSolver:
 
                 elif isinstance(message, ResultMessage):
                     self._session_id = message.session_id
+                    if message.is_error:
+                        turn_error = True
+                        details = "; ".join(message.errors or []) or message.result or message.subtype
+                        logger.error(
+                            "[%s] Claude turn failed (subtype=%s, api_status=%s): %s",
+                            self.agent_name,
+                            message.subtype,
+                            message.api_error_status,
+                            details[:1000],
+                        )
+                        self._findings = f"Claude turn failed: {details[:1000]}"
                     turn_cost = getattr(message, "total_cost_usd", 0.0)
                     self._cost_usd += turn_cost
                     msg_usage = getattr(message, "usage", None) or {}
@@ -342,6 +354,8 @@ class ClaudeSolver:
             # Report per-run metrics so broken-solver detection works
             run_steps = self._step_count - steps_before
             run_cost = self._cost_usd - cost_before
+            if turn_error:
+                return self._result(ERROR, run_steps=run_steps, run_cost=run_cost)
             return self._result(GAVE_UP, run_steps=run_steps, run_cost=run_cost)
 
         except asyncio.CancelledError:

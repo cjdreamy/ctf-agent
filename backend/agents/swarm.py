@@ -8,6 +8,10 @@ import time
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
+from rich.console import Console
+from rich.panel import Panel
+from rich.text import Text
+
 from backend.agents.solver import Solver
 from backend.cost_tracker import CostTracker
 from backend.ctfd import CTFdClient
@@ -28,6 +32,7 @@ if TYPE_CHECKING:
     from backend.config import Settings
 
 logger = logging.getLogger(__name__)
+flag_console = Console(stderr=True)
 
 
 # Quota fallback: map subscription-backed providers to API-backed equivalents
@@ -230,7 +235,18 @@ class ChallengeSwarm:
                 self.cancel_event.set()
                 self.winner = result
                 logger.info(
-                    f"[{self.meta.name}] Flag found by {model_spec}: {result.flag}"
+                    "[%s] Confirmed flag found by %s",
+                    self.meta.name,
+                    model_spec,
+                )
+                flag_console.print(
+                    Panel(
+                        Text(result.flag or "(flag missing)", style="bold white on dark_green"),
+                        title="✅ CONFIRMED FLAG",
+                        subtitle=f"{self.meta.name} · {model_spec}",
+                        border_style="bold bright_green",
+                        padding=(1, 4),
+                    )
                 )
                 return result, solver
 
